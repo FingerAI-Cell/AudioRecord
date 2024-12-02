@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">RecordingVoice</string>
+    <string name="start_recording">회의 시작</string>
+    <string name="mute_recording">음소거</string>
+    <string name="stop_recording">회의 종료</string>
+    <string name="play_recording">파일 재생</string>
+</resources>
