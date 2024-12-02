@@ -16,6 +16,9 @@ import android.media.audiofx.NoiseSuppressor
 import java.io.FileOutputStream
 import android.os.Environment
 import android.view.View
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
     private var audioRecord: AudioRecord? = null
@@ -171,8 +174,7 @@ class MainActivity : AppCompatActivity() {
                             // DSP 결과를 ByteArray로 변환
                             val processedByteArray = ByteArray(processedShortArray.size * 2)
                             for (i in processedShortArray.indices) {
-                                processedByteArray[i * 2] =
-                                    (processedShortArray[i].toInt() and 0xFF).toByte()
+                                processedByteArray[i * 2] = (processedShortArray[i].toInt() and 0xFF).toByte()
                                 processedByteArray[i * 2 + 1] =
                                     (processedShortArray[i].toInt() shr 8 and 0xFF).toByte()
                             }
@@ -198,7 +200,7 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "녹음 시작 실패: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
-    }
+        }
 
     private fun showMuteLayout() {
         muteLayout.visibility = View.VISIBLE
@@ -236,6 +238,10 @@ class MainActivity : AppCompatActivity() {
         hideMuteLayout()
         synchronized(recordedData) {
             try {   // WAV 파일로 저장
+                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                outputFile = "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)}/audiorecord_$timestamp.pcm"
+                wavFilePath = "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)}/audiorecord_$timestamp.wav"
+
                 val wavOutputStream = FileOutputStream(wavFilePath)
                 val totalAudioLen = recordedData.sumOf { it.size }.toLong()
                 val header = ByteArray(44)   // WAV 헤더 생성
@@ -264,67 +270,7 @@ class MainActivity : AppCompatActivity() {
         channels: Int,
         bitRate: Int
     ) {
-        val totalDataLen = totalAudioLen + 3 private fun prepareWavHeader(
-            header: ByteArray,
-            totalAudioLen: Long,
-            sampleRate: Int,
-            channels: Int,
-            bitRate: Int
-        ) {
-            val totalDataLen = totalAudioLen + 36
-            val byteRate = (sampleRate * channels * bitRate / 8).toLong()
-
-            // RIFF Header
-            header[0] = 'R'.code.toByte()
-            header[1] = 'I'.code.toByte()
-            header[2] = 'F'.code.toByte()
-            header[3] = 'F'.code.toByte()
-            header[4] = (totalDataLen and 0xff).toByte()
-            header[5] = ((totalDataLen shr 8) and 0xff).toByte()
-            header[6] = ((totalDataLen shr 16) and 0xff).toByte()
-            header[7] = ((totalDataLen shr 24) and 0xff).toByte()
-            header[8] = 'W'.code.toByte()
-            header[9] = 'A'.code.toByte()
-            header[10] = 'V'.code.toByte()
-            header[11] = 'E'.code.toByte()
-
-            // fmt sub-chunk
-            header[12] = 'f'.code.toByte()
-            header[13] = 'm'.code.toByte()
-            header[14] = 't'.code.toByte()
-            header[15] = ' '.code.toByte()
-            header[16] = 16 // Sub-chunk size
-            header[17] = 0
-            header[18] = 0
-            header[19] = 0
-            header[20] = 1 // PCM format
-            header[21] = 0
-            header[22] = channels.toByte()
-            header[23] = 0
-            header[24] = (sampleRate and 0xff).toByte()
-            header[25] = ((sampleRate shr 8) and 0xff).toByte()
-            header[26] = ((sampleRate shr 16) and 0xff).toByte()
-            header[27] = ((sampleRate shr 24) and 0xff).toByte()
-            header[28] = (byteRate and 0xff).toByte()
-            header[29] = ((byteRate shr 8) and 0xff).toByte()
-            header[30] = ((byteRate shr 16) and 0xff).toByte()
-            header[31] = ((byteRate shr 24) and 0xff).toByte()
-            header[32] = (channels * bitRate / 8).toByte()
-            header[33] = 0
-            header[34] = bitRate.toByte()
-            header[35] = 0
-
-            // data sub-chunk
-            header[36] = 'd'.code.toByte()
-            header[37] = 'a'.code.toByte()
-            header[38] = 't'.code.toByte()
-            header[39] = 'a'.code.toByte()
-            header[40] = (totalAudioLen and 0xff).toByte()
-            header[41] = ((totalAudioLen shr 8) and 0xff).toByte()
-            header[42] = ((totalAudioLen shr 16) and 0xff).toByte()
-            header[43] = ((totalAudioLen shr 24) and 0xff).toByte()
-        }
-    }6
+        val totalDataLen = totalAudioLen + 36
         val byteRate = (sampleRate * channels * bitRate / 8).toLong()
 
         // RIFF Header
