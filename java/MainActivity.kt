@@ -41,11 +41,6 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        outputFile =
-            "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)}/audiorecord_${System.currentTimeMillis()}.pcm"
-        wavFilePath =
-            "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)}/audiorecord_${System.currentTimeMillis()}.wav"
-
         val startButton = findViewById<Button>(R.id.startButton)
         val muteButton = findViewById<Button>(R.id.muteButton)
         val stopButton = findViewById<Button>(R.id.stopButton)
