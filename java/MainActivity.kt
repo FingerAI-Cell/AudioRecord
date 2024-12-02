@@ -89,24 +89,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun applyBandPassFilter(audioData: ShortArray, sampleRate: Int, lowFreq: Float, highFreq: Float): ShortArray {
-        val filteredData = ShortArray(audioData.size)
-        val lowPassCoeff = 2 * Math.PI * lowFreq / sampleRate
-        val highPassCoeff = 2 * Math.PI * highFreq / sampleRate
-
-        var prevSample = 0.0
-        for (i in audioData.indices) {
-            val sample = audioData[i] / 32768.0 // Normalize to [-1.0, 1.0]
-            val lowPassed = sample - prevSample * lowPassCoeff
-            val highPassed = lowPassed * highPassCoeff
-            prevSample = sample
-
-            // Convert back to 16-bit PCM
-            filteredData[i] = (highPassed * 32768).toInt().toShort()
-        }
-        return filteredData
-    }
-
     private fun showRecordingLayout() {
         recordingLayout.visibility = View.VISIBLE
     }
@@ -152,36 +134,16 @@ class MainActivity : AppCompatActivity() {
             Thread {
                 val audioData = ByteArray(bufferSize)
                 val silenceData = ByteArray(bufferSize) { 0 } // 묵음 데이터
-                val shortBuffer = ShortArray(bufferSize / 2) // 16-bit PCM용 ShortArray
-
                 try {
                     while (isRecording) {
                         val bytesRead = audioRecord!!.read(audioData, 0, audioData.size)
                         if (bytesRead > 0) {
-                            // ByteArray를 ShortArray로 변환
-                            for (i in 0 until bytesRead step 2) {
-                                shortBuffer[i / 2] =
-                                    ((audioData[i + 1].toInt() shl 8) or (audioData[i].toInt() and 0xFF)).toShort()
-                            }
-
-                            // DSP 처리 적용
-                            val processedShortArray = if (isMuted) {
-                                ShortArray(shortBuffer.size) { 0 } // 음소거 상태 시 묵음 처리
-                            } else {
-                                applyBandPassFilter(shortBuffer, sampleRate, 300f, 3000f)
-                            }
-
-                            // DSP 결과를 ByteArray로 변환
-                            val processedByteArray = ByteArray(processedShortArray.size * 2)
-                            for (i in processedShortArray.indices) {
-                                processedByteArray[i * 2] = (processedShortArray[i].toInt() and 0xFF).toByte()
-                                processedByteArray[i * 2 + 1] =
-                                    (processedShortArray[i].toInt() shr 8 and 0xFF).toByte()
-                            }
-
-                            // 저장
                             synchronized(recordedData) {
-                                recordedData.add(processedByteArray)
+                                if (isMuted) {
+                                    recordedData.add(silenceData.copyOf())    // 음소거 상태일 경우 묵음 데이터 저장
+                                } else {
+                                    recordedData.add(audioData.copyOf())   // 정상 데이터 저장
+                                }
                             }
                         }
                     }
@@ -194,13 +156,17 @@ class MainActivity : AppCompatActivity() {
                     audioRecord = null
                 }
             }.start()
-        } catch (e: Exception) { // 바깥쪽 try의 예외 처리
+
+            runOnUiThread {
+                Toast.makeText(this, "녹음 시작", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
             e.printStackTrace()
             runOnUiThread {
-                Toast.makeText(this, "녹음 시작 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "녹음 실패: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
-        }
+    }
 
     private fun showMuteLayout() {
         muteLayout.visibility = View.VISIBLE
