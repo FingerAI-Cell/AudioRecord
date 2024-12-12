@@ -19,12 +19,11 @@ import android.view.View
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
     private var audioRecord: AudioRecord? = null
-    private var outputFile: String = ""
     private var wavFilePath: String = ""
-    private val recordedData = mutableListOf<ByteArray>()
     private var isRecording = false
     private var noiseSuppressor: NoiseSuppressor? = null
     private lateinit var recordingLayout: RelativeLayout
@@ -32,10 +31,12 @@ class MainActivity : AppCompatActivity() {
     private var isMuted = false // 음소거 상태를 저장
     private var isMeetingActive = false // 회의 상태를 저장
     private var hasPermission = false // 녹음 권한
+    private var outputFile: String = ""
     private val REQUEST_RECORD_AUDIO_PERMISSION = 200
     private val sampleRate = 44100 // 샘플링 속도
     private val channelConfig = AudioFormat.CHANNEL_IN_MONO // 모노 채널
     private val audioFormat = AudioFormat.ENCODING_PCM_16BIT // 16비트 PCM
+    private val bufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,21 +47,23 @@ class MainActivity : AppCompatActivity() {
         val stopButton = findViewById<Button>(R.id.stopButton)
         recordingLayout = findViewById(R.id.recordingLayout) // 참조를 캐싱
         muteLayout = findViewById(R.id.muteLayout)
+        outputFile =
+            "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)}/audiorecord_${System.currentTimeMillis()}.pcm"
+        wavFilePath =
+            "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)}/audiorecord_${System.currentTimeMillis()}.wav"
 
-        startButton.setOnClickListener { startRecordingWithMute() }
+        startButton.setOnClickListener { startRecording() }
         muteButton.setOnClickListener { toggleMute() }
         stopButton.setOnClickListener { stopRecording() }
         requestPermissions()
     }
 
     private fun requestPermissions() {
-        // 녹음 권한이 있는지 확인
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             == PackageManager.PERMISSION_GRANTED
         ) {
             hasPermission = true
-        } else {
-            // 권한 요청
+        } else {   // 권한 요청
             ActivityCompat.requestPermissions(
                 this,
                 arrayOf(Manifest.permission.RECORD_AUDIO),
@@ -88,16 +91,14 @@ class MainActivity : AppCompatActivity() {
         val filteredData = ShortArray(audioData.size)
         val lowPassCoeff = 2 * Math.PI * lowFreq / sampleRate
         val highPassCoeff = 2 * Math.PI * highFreq / sampleRate
-
         var prevSample = 0.0
+
         for (i in audioData.indices) {
             val sample = audioData[i] / 32768.0 // Normalize to [-1.0, 1.0]
             val lowPassed = sample - prevSample * lowPassCoeff
             val highPassed = lowPassed * highPassCoeff
             prevSample = sample
-
-            // Convert back to 16-bit PCM
-            filteredData[i] = (highPassed * 32768).toInt().toShort()
+            filteredData[i] = (highPassed * 32768).toInt().toShort()   // Convert back to 16-bit PCM
         }
         return filteredData
     }
@@ -110,7 +111,7 @@ class MainActivity : AppCompatActivity() {
         recordingLayout.visibility = View.GONE
     }
 
-    private fun startRecordingWithMute() {
+    private fun startRecording() {
         if (isMeetingActive) {
             Toast.makeText(this, "회의가 진행 중입니다.", Toast.LENGTH_SHORT).show()
             return
@@ -124,7 +125,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         try {
-            val bufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
             audioRecord = AudioRecord(
                 MediaRecorder.AudioSource.MIC,
                 sampleRate,
@@ -132,78 +132,62 @@ class MainActivity : AppCompatActivity() {
                 audioFormat,
                 bufferSize
             )
+
             noiseSuppressor = if (NoiseSuppressor.isAvailable()) {
                 NoiseSuppressor.create(audioRecord!!.audioSessionId)
             } else null
 
             audioRecord?.startRecording()
-            isMeetingActive = true
             isRecording = true
-            isMuted = false // 초기 상태: 음소거 해제
-            recordedData.clear() // 이전 데이터 초기화
+            isMeetingActive = true
+
             showRecordingLayout()
-
-            // 녹음 데이터를 메모리에 저장하는 쓰레드 실행
             Thread {
-                val audioData = ByteArray(bufferSize)
-                val silenceData = ByteArray(bufferSize) { 0 } // 묵음 데이터
-                val shortBuffer = ShortArray(bufferSize / 2) // 16-bit PCM용 ShortArray
-
-                try {
-                    while (isRecording) {
-                        val bytesRead = audioRecord!!.read(audioData, 0, audioData.size)
-                        if (bytesRead > 0) {
-                            // ByteArray를 ShortArray로 변환
-                            for (i in 0 until bytesRead step 2) {
-                                shortBuffer[i / 2] =
-                                    ((audioData[i + 1].toInt() shl 8) or (audioData[i].toInt() and 0xFF)).toShort()
-                            }
-
-                            // DSP 처리 적용
-                            val processedShortArray = if (isMuted) {
-                                ShortArray(shortBuffer.size) { 0 } // 음소거 상태 시 묵음 처리
-                            } else {
-                                applyBandPassFilter(shortBuffer, sampleRate, 300f, 3000f)
-                            }
-
-                            // DSP 결과를 ByteArray로 변환
-                            val processedByteArray = ByteArray(processedShortArray.size * 2)
-                            for (i in processedShortArray.indices) {
-                                processedByteArray[i * 2] =
-                                    (processedShortArray[i].toInt() and 0xFF).toByte()
-                                processedByteArray[i * 2 + 1] =
-                                    (processedShortArray[i].toInt() shr 8 and 0xFF).toByte()
-                            }
-
-                            // 저장
-                            synchronized(recordedData) {
-                                recordedData.add(processedByteArray)
-                            }
-                        }
-                    }
-                } catch (e: IOException) {
-                    e.printStackTrace()
-                } finally {
-                    audioRecord?.stop()
-                    audioRecord?.release()
-                    noiseSuppressor?.release()
-                    audioRecord = null
-                }
+                saveAudioToFileHybrid()
             }.start()
-        } catch (e: Exception) { // 바깥쪽 try의 예외 처리
+            Toast.makeText(this, "녹음을 시작합니다.", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
             e.printStackTrace()
-            runOnUiThread {
-                Toast.makeText(this, "녹음 시작 실패: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
+            Toast.makeText(this, "녹음을 시작할 수 없습니다.", Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun showMuteLayout() {
-        muteLayout.visibility = View.VISIBLE
-    }
+    private fun showMuteLayout() { muteLayout.visibility = View.VISIBLE }
+    private fun hideMuteLayout() { muteLayout.visibility = View.GONE }
 
-    private fun hideMuteLayout() {
-        muteLayout.visibility = View.GONE
+    private fun saveAudioToFileHybrid() {
+        val audioData = ByteArray(bufferSize)
+        val file = File(outputFile)
+        val tempBuffer = mutableListOf<ByteArray>()
+
+        FileOutputStream(file).use { outputStream ->
+            try {
+                while (isRecording) {
+                    val bytesRead = audioRecord!!.read(audioData, 0, audioData.size)
+                    if (bytesRead > 0) {
+                        tempBuffer.add(audioData.copyOf(bytesRead))   // 메모리에 저장
+
+                        // 버퍼 크기가 일정량 이상이면 파일로 저장
+                        if (tempBuffer.size >= 10) { // 예: 10개의 블록 저장 후 파일에 씀
+                            synchronized(tempBuffer) {
+                                tempBuffer.forEach { chunk ->
+                                    outputStream.write(chunk)
+                                }
+                                tempBuffer.clear()
+                            }
+                        }
+                    }
+                }
+                synchronized(tempBuffer) {
+                    tempBuffer.forEach { chunk ->
+                        outputStream.write(chunk)
+                    }
+                    tempBuffer.clear()
+                }
+            } catch (e: IOException) {
+                e.printStackTrace()
+            }
+        }
     }
 
     private fun toggleMute() {
@@ -225,38 +209,39 @@ class MainActivity : AppCompatActivity() {
 
     private fun stopRecording() {
         if (!isMeetingActive) {
-            Toast.makeText(this, "진행중인 회의가 없습니다.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "진행 중인 녹음이 없습니다.", Toast.LENGTH_SHORT).show()
             return
         }
         isRecording = false
         isMeetingActive = false
+        audioRecord?.stop()
+        audioRecord?.release()
+        noiseSuppressor?.release()
+
+        audioRecord = null
+        noiseSuppressor = null
         hideRecordingLayout()
         hideMuteLayout()
-        synchronized(recordedData) {
-            try {   // WAV 파일로 저장
-                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                outputFile = "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)}/audiorecord_$timestamp.pcm"
-                wavFilePath = "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)}/audiorecord_$timestamp.wav"
 
-                val wavOutputStream = FileOutputStream(wavFilePath)
-                val totalAudioLen = recordedData.sumOf { it.size }.toLong()
-                val header = ByteArray(44)   // WAV 헤더 생성
+        Thread {   // 백그라운드 스레드에서 파일 변환
+            try {
+                val pcmFile = File(outputFile) // 기존 PCM 파일 경로
+                val wavFile = File(wavFilePath) // 변환할 WAV 파일 경로
+                if (pcmFile.exists()) {
+                    val pcmData = pcmFile.readBytes()
+                    val wavOutputStream = FileOutputStream(wavFile)
+                    val header = ByteArray(44)
 
-                prepareWavHeader(header, totalAudioLen, sampleRate, 1, 16)
-                wavOutputStream.write(header)
-
-                for (data in recordedData) {   // PCM 데이터 기록
-                    wavOutputStream.write(data)
+                    prepareWavHeader(header, pcmData.size.toLong(), sampleRate, 1, 16)   // WAV 헤더 생성
+                    wavOutputStream.write(header)
+                    wavOutputStream.write(pcmData)   // PCM 데이터 기록
+                    wavOutputStream.close()
                 }
-                wavOutputStream.close()
-                Toast.makeText(this, "회의 종료", Toast.LENGTH_SHORT).show()
             } catch (e: IOException) {
                 e.printStackTrace()
-                Toast.makeText(this, "파일 저장 실패", Toast.LENGTH_SHORT).show()
-            } finally {
-                recordedData.clear()
             }
-        }
+        }.start()
+        Toast.makeText(this, "회의 종료", Toast.LENGTH_SHORT).show()
     }
 
     private fun prepareWavHeader(
