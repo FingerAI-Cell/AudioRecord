@@ -16,9 +16,6 @@ import android.media.audiofx.NoiseSuppressor
 import java.io.FileOutputStream
 import android.os.Environment
 import android.view.View
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
@@ -47,10 +44,6 @@ class MainActivity : AppCompatActivity() {
         val stopButton = findViewById<Button>(R.id.stopButton)
         recordingLayout = findViewById(R.id.recordingLayout) // 참조를 캐싱
         muteLayout = findViewById(R.id.muteLayout)
-        outputFile =
-            "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)}/audiorecord_${System.currentTimeMillis()}.pcm"
-        wavFilePath =
-            "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)}/audiorecord_${System.currentTimeMillis()}.wav"
 
         startButton.setOnClickListener { startRecording() }
         muteButton.setOnClickListener { toggleMute() }
@@ -125,6 +118,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         try {
+            outputFile =
+                "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)}/audiorecord_${System.currentTimeMillis()}.pcm"
+            wavFilePath =
+                "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)}/audiorecord_${System.currentTimeMillis()}.wav"
+
             audioRecord = AudioRecord(
                 MediaRecorder.AudioSource.MIC,
                 sampleRate,
