@@ -163,7 +163,14 @@ class MainActivity : AppCompatActivity() {
                 while (isRecording) {
                     val bytesRead = audioRecord!!.read(audioData, 0, audioData.size)
                     if (bytesRead > 0) {
-                        tempBuffer.add(audioData.copyOf(bytesRead))   // 메모리에 저장
+                        if (isMuted) {
+                            // 음소거 상태일 때 데이터를 무음으로 설정
+                            for (i in audioData.indices) {
+                                audioData[i] = 0
+                            }
+                        }
+                        // 무음이든 실제 데이터든 저장
+                        tempBuffer.add(audioData.copyOf(bytesRead))
 
                         // 버퍼 크기가 일정량 이상이면 파일로 저장
                         if (tempBuffer.size >= 10) { // 예: 10개의 블록 저장 후 파일에 씀
@@ -176,6 +183,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                 }
+                // 남은 데이터 저장
                 synchronized(tempBuffer) {
                     tempBuffer.forEach { chunk ->
                         outputStream.write(chunk)
